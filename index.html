@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartAudio Hearing Assistant - Prototipo STEAM</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --danger: #ef4444;
+            --success: #22c55e;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            margin: 0 0 4px 0;
+            color: var(--accent);
+        }
+
+        header p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .card h2 {
+            font-size: 1rem;
+            margin: 0;
+            color: var(--text-main);
+            border-bottom: 1px solid #334155;
+            padding-bottom: 8px;
+        }
+
+        /* Controles de gran tamaño para accesibilidad */
+        .btn {
+            background-color: var(--accent);
+            color: #0f172a;
+            border: none;
+            border-radius: 12px;
+            padding: 16px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            text-align: center;
+            width: 100%;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+
+        .btn:disabled {
+            background-color: #475569;
+            color: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        select, input[type="range"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            background-color: #0f172a;
+            color: var(--text-main);
+            border: 1px solid #475569;
+            font-size: 1rem;
+        }
+
+        label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 120px;
+            background-color: #090d16;
+            border-radius: 8px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--danger);
+        }
+
+        .dot.active {
+            background-color: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>SmartAudio Assistant</h1>
+            <p>Amplificador Auditivo Inteligente con IA (Modo Inalámbrico/Alámbrico)</p>
+        </header>
+
+        <!-- Estado y Control Principal -->
+        <div class="card">
+            <div class="status-indicator">
+                <div id="statusDot" class="dot"></div>
+                <span id="statusText">Sistema Inactivo</span>
+            </div>
+
+            <div class="control-group">
+                <label for="micSelect">Seleccionar Micrófono (Cable/Inalámbrico):</label>
+                <select id="micSelect">
+                    <option value="">Cargando dispositivos...</option>
+                </select>
+            </div>
+
+            <button id="mainBtn" class="btn">Activar Amplificador</button>
+        </div>
+
+        <!-- Visualizador Espectral -->
+        <div class="card">
+            <h2>Espectrograma de Audio en Tiempo Real</h2>
+            <canvas id="visualizer"></canvas>
+        </div>
+
+        <!-- Ajustes de Procesamiento DSP -->
+        <div class="card">
+            <h2>Filtros de Voz y Volumen</h2>
+            
+            <div class="control-group">
+                <label>Ganancia / Volumen Master: <span id="gainVal">2.0x</span></label>
+                <input type="range" id="gainRange" min="0.5" max="5.0" step="0.1" value="2.0">
+            </div>
+
+            <div class="control-group">
+                <label>Realce de Voz (Frecuencias Medias): <span id="eqVal">5 dB</span></label>
+                <input type="range" id="eqRange" min="0" max="15" step="1" value="5">
+            </div>
+
+            <div class="control-group">
+                <label>Filtro Antirruido (Paso Banda 300Hz - 3400Hz):</label>
+                <button id="filterToggle" class="btn" style="padding: 10px; font-size: 0.9rem; background-color: #334155; color: white;">Desactivado</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let audioCtx = null;
+        let mediaStream = null;
+        let sourceNode = null;
+        let gainNode = null;
+        let bandpassNode = null;
+        let peakingNode = null;
+        let analyserNode = null;
+        let isRunning = false;
+        let filterActive = false;
+
+        const mainBtn = document.getElementById('mainBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const micSelect = document.getElementById('micSelect');
+        const gainRange = document.getElementById('gainRange');
+        const gainVal = document.getElementById('gainVal');
+        const eqRange = document.getElementById('eqRange');
+        const eqVal = document.getElementById('eqVal');
+        const filterToggle = document.getElementById('filterToggle');
+        const canvas = document.getElementById('visualizer');
+        const canvasCtx = canvas.getContext('2d');
+
+        // Ajustar tamaño del canvas dinámicamente
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+
+        // Listar dispositivos de audio (Micrófonos conectados por cable o bluetooth)
+        async function updateDeviceList() {
+            try {
+                // Se requiere pedir permiso previo para enumerar etiquetas en algunos móviles
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                
+                micSelect.innerHTML = '';
+                audioInputs.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Micrófono ${index + 1} (Auricular/Dispositivo)`;
+                    micSelect.appendChild(option);
+                });
+            } catch (err) {
+                console.error("Error al listar dispositivos:", err);
+                micSelect.innerHTML = '<option value="">Permiso de micrófono requerido</option>';
+            }
+        }
+
+        // Cargar lista al iniciar
+        updateDeviceList();
+
+        mainBtn.addEventListener('click', async () => {
+            if (!isRunning) {
+                try {
+                    // Configuración orientada a baja latencia (<20ms)
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                    if (audioCtx.state === 'suspended') {
+                        await audioCtx.resume();
+                    }
+
+                    const selectedMicId = micSelect.value;
+                    const constraints = {
+                        audio: {
+                            deviceId: selectedMicId ? { exact: selectedMicId } : undefined,
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: false
+                        }
+                    };
+
+                    mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    
+                    // Creación del Pipeline de Web Audio API
+                    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+                    
+                    // Nodo de Ganancia Master
+                    gainNode = audioCtx.createGain();
+                    gainNode.gain.value = parseFloat(gainRange.value);
+
+                    // Nodo Ecualizador para realzar la voz (Peaking Filter)
+                    peakingNode = audioCtx.createBiquadFilter();
+                    peakingNode.type = 'peaking';
+                    peakingNode.frequency.value = 2000; // Centro de la banda de voz
+                    peakingNode.Q.value = 1.0;
+                    peakingNode.gain.value = parseFloat(eqRange.value);
+
+                    // Nodo Filtro Paso Banda (Bandpass)
+                    bandpassNode = audioCtx.createBiquadFilter();
+                    bandpassNode.type = 'bandpass';
+                    bandpassNode.frequency.value = 1850;
+                    bandpassNode.Q.value = 0.7;
+
+                    // Nodo Analizador para el espectrograma
+                    analyserNode = audioCtx.createAnalyser();
+                    analyserNode.fftSize = 256;
+
+                    // Enrutamiento de nodos condicional
+                    reconnectAudioGraph();
+
+                    statusDot.classList.add('active');
+                    statusText.textContent = 'Sistema Activo (Transmitiendo)';
+                    mainBtn.textContent = 'Desactivar Amplificador';
+                    mainBtn.classList.add('btn-danger');
+                    isRunning = true;
+
+                    visualize();
+
+                } catch (err) {
+                    alert('Error al acceder al micrófono: Asegúrate de usar HTTPS o localhost. Detalle: ' + err.message);
+                    console.error(err);
+                }
+            } else {
+                stopAudio();
+            }
+        });
+
+        function reconnectAudioGraph() {
+            if (!sourceNode) return;
+            
+            // Desconectar nodos previos si existían
+            sourceNode.disconnect();
+            if (bandpassNode) bandpassNode.disconnect();
+            if (peakingNode) peakingNode.disconnect();
+            if (gainNode) gainNode.disconnect();
+            if (analyserNode) analyserNode.disconnect();
+
+            // Cadena de nodos
+            let lastNode = sourceNode;
+
+            if (filterActive) {
+                lastNode.connect(bandpassNode);
+                lastNode = bandpassNode;
+            }
+
+            lastNode.connect(peakingNode);
+            peakingNode.connect(gainNode);
+            gainNode.connect(analyserNode);
+            analyserNode.connect(audioCtx.destination); // Envía el audio a tus auriculares (cable o bluetooth)
+        }
+
+        function stopAudio() {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+            if (audioCtx) {
+                audioCtx.close();
+            }
+            statusDot.classList.remove('active');
+            statusText.textContent = 'Sistema Inactivo';
+            mainBtn.textContent = 'Activar Amplificador';
+            mainBtn.classList.remove('btn-danger');
+            isRunning = false;
+        }
+
+        // Controles interactivos
+        gainRange.addEventListener('input', (e) => {
+            gainVal.textContent = e.target.value + 'x';
+            if (gainNode) gainNode.gain.value = parseFloat(e.target.value);
+        });
+
+        eqRange.addEventListener('input', (e) => {
+            eqVal.textContent = e.target.value + ' dB';
+            if (peakingNode) peakingNode.gain.value = parseFloat(e.target.value);
+        });
+
+        filterToggle.addEventListener('click', () => {
+            filterActive = !filterActive;
+            filterToggle.style.backgroundColor = filterActive ? 'var(--success)' : '#334155';
+            filterToggle.style.color = filterActive ? '#0f172a' : 'white';
+            filterToggle.textContent = filterActive ? 'Activado (300Hz-3400Hz)' : 'Desactivado';
+            if (isRunning) reconnectAudioGraph();
+        });
+
+        // Visualizador Canvas (FFT)
+        function visualize() {
+            if (!isRunning) return;
+
+            const bufferLength = analyserNode.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                if (!isRunning) return;
+                requestAnimationFrame(draw);
+
+                analyserNode.getByteFrequencyData(dataArray);
+
+                canvasCtx.fillStyle = '#090d16';
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let barHeight;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    barHeight = dataArray[i] / 2;
+
+                    canvasCtx.fillStyle = `rgb(${barHeight + 100}, 185, 248)`;
+                    canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                    x += barWidth + 1;
+                }
+            }
+
+            draw();
+        }
+    </script>
+</body>
+</html>
