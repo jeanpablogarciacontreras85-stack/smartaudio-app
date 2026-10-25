@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartAudio Medical Grade - Asistente Auditivo Pro</title>
+    <style>
+        :root {
+            --bg-color: #030712;
+            --card-bg: #111827;
+            --accent: #06b6d4;
+            --text-main: #f9fafb;
+            --text-muted: #9ca3af;
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        header {
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 1.3rem;
+            margin: 0;
+            color: var(--accent);
+        }
+
+        header p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin: 4px 0 0 0;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 14px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border: 1px solid #1f2937;
+        }
+
+        .card h2 {
+            font-size: 0.85rem;
+            margin: 0;
+            color: var(--accent);
+            border-bottom: 1px solid #1f2937;
+            padding-bottom: 6px;
+        }
+
+        .tip-box {
+            background-color: #1f2937;
+            border-left: 4px solid var(--accent);
+            padding: 8px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            border-radius: 4px;
+            line-height: 1.4;
+        }
+
+        .btn {
+            background-color: var(--accent);
+            color: #030712;
+            border: none;
+            border-radius: 10px;
+            padding: 14px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.1s;
+        }
+
+        .btn:active { transform: scale(0.98); }
+        .btn-danger { background-color: var(--danger); color: white; }
+
+        select, input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            border-radius: 6px;
+            background-color: #030712;
+            color: var(--text-main);
+            border: 1px solid #374151;
+            box-sizing: border-box;
+        }
+
+        label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 80px;
+            background-color: #010409;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>SmartAudio Clinical</h1>
+            <p>Procesador DSP de Asistencia Auditiva de Alta Nitidez</p>
+        </header>
+
+        <div class="card">
+            <div class="tip-box">
+                💡 <b>Recomendación Profesional:</b> Usa <b>auriculares de cable</b> para obtener latencia cero (<10ms) y calidad de estudio exacta a la de un aparato auditivo clínico de alta gama.
+            </div>
+
+            <div class="control-group">
+                <label for="micSelect">Micrófono de Entrada:</label>
+                <select id="micSelect">
+                    <option value="">Cargando entradas...</option>
+                </select>
+            </div>
+
+            <button id="mainBtn" class="btn">Activar Núcleo Auditivo</button>
+        </div>
+
+        <div class="card">
+            <h2>Espectrograma en Tiempo Real</h2>
+            <canvas id="visualizer"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>Ajustes Clínicos de Precisión</h2>
+            
+            <div class="control-group">
+                <label>Ganancia / Volumen Principal: <span id="gainVal">2.0x</span></label>
+                <input type="range" id="gainRange" min="1.0" max="6.0" step="0.2" value="2.0">
+            </div>
+
+            <div class="control-group">
+                <label>Compresión Dinámica (Claridad de Voces Lejanas): <span id="compVal">Alta (16:1)</span></label>
+                <input type="range" id="compRange" min="4" max="20" step="2" value="16">
+            </div>
+
+            <div class="control-group">
+                <label>Realce Quirúrgico de Consonantes (Voces Agudas): <span id="eqVal">+12 dB</span></label>
+                <input type="range" id="eqRange" min="0" max="20" step="1" value="12">
+            </div>
+
+            <div class="control-group">
+                <label>Supresión de Graves y Retornos (0Hz - 300Hz):</label>
+                <button id="filterToggle" class="btn" style="padding: 8px; font-size: 0.8rem; background-color: var(--success); color: #030712;">Filtro Antirruido Activo</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let audioCtx = null;
+        let mediaStream = null;
+        let sourceNode = null;
+        let gainNode = null;
+        let highpassFilter = null;
+        let speechEqNode = null;
+        let clinicalCompressor = null;
+        let analyserNode = null;
+        let isRunning = false;
+        let filterActive = true;
+
+        const mainBtn = document.getElementById('mainBtn');
+        const micSelect = document.getElementById('micSelect');
+        const gainRange = document.getElementById('gainRange');
+        const gainVal = document.getElementById('gainVal');
+        const compRange = document.getElementById('compRange');
+        const compVal = document.getElementById('compVal');
+        const eqRange = document.getElementById('eqRange');
+        const eqVal = document.getElementById('eqVal');
+        const filterToggle = document.getElementById('filterToggle');
+        const canvas = document.getElementById('visualizer');
+        const canvasCtx = canvas.getContext('2d');
+
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+
+        async function updateDeviceList() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                
+                micSelect.innerHTML = '';
+                audioInputs.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Micrófono ${index + 1}`;
+                    micSelect.appendChild(option);
+                });
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        updateDeviceList();
+
+        mainBtn.addEventListener('click', async () => {
+            if (!isRunning) {
+                try {
+                    // Inicializar motor de audio con la máxima tasa de muestreo y latencia cero
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+                        latencyHint: 'interactive',
+                        sampleRate: 48000
+                    });
+
+                    if (audioCtx.state === 'suspended') {
+                        await audioCtx.resume();
+                    }
+
+                    const selectedMicId = micSelect.value;
+                    const constraints = {
+                        audio: {
+                            deviceId: selectedMicId ? { exact: selectedMicId } : undefined,
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
+                            googEchoCancellation: false,
+                            googAutoGainControl: false,
+                            googNoiseSuppression: false,
+                            googHighpassFilter: false,
+                            channelCount: 2
+                        }
+                    };
+
+                    mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+                    
+                    // 1. Filtro Paso-Altos Clínico (Corta zumbidos y ruidos sordos de fondo)
+                    highpassFilter = audioCtx.createBiquadFilter();
+                    highpassFilter.type = 'highpass';
+                    highpassFilter.frequency.value = 300;
+
+                    // 2. Ecualizador de Voz (Peaking en 2500Hz para aislar la inteligibilidad humana)
+                    speechEqNode = audioCtx.createBiquadFilter();
+                    speechEqNode.type = 'peaking';
+                    speechEqNode.frequency.value = 2500;
+                    speechEqNode.Q.value = 1.4;
+                    speechEqNode.gain.value = parseFloat(eqRange.value);
+
+                    // 3. Compresor Clínico WDRC (Nivela sonidos suaves y protege contra estruendos)
+                    clinicalCompressor = audioCtx.createDynamicsCompressor();
+                    clinicalCompressor.threshold.value = -30; // Captura consonantes débiles
+                    clinicalCompressor.knee.value = 10;
+                    clinicalCompressor.ratio.value = parseFloat(compRange.value);
+                    clinicalCompressor.attack.value = 0.002;  // Respuesta ultra rápida
+                    clinicalCompressor.release.value = 0.150;
+
+                    // 4. Ganancia Master
+                    gainNode = audioCtx.createGain();
+                    gainNode.gain.value = parseFloat(gainRange.value);
+
+                    // 5. Analizador Visual
+                    analyserNode = audioCtx.createAnalyser();
+                    analyserNode.fftSize = 256;
+
+                    reconnectGraph();
+
+                    mainBtn.textContent = 'Apagar Núcleo Auditivo';
+                    mainBtn.classList.add('btn-danger');
+                    isRunning = true;
+
+                    visualize();
+
+                } catch (err) {
+                    alert('Error en el núcleo de audio: ' + err.message);
+                }
+            } else {
+                stopAudio();
+            }
+        });
+
+        function reconnectGraph() {
+            if (!sourceNode) return;
+            
+            sourceNode.disconnect();
+            if (highpassFilter) highpassFilter.disconnect();
+            if (speechEqNode) speechEqNode.disconnect();
+            if (clinicalCompressor) clinicalCompressor.disconnect();
+            if (gainNode) gainNode.disconnect();
+            if (analyserNode) analyserNode.disconnect();
+
+            let lastNode = sourceNode;
+
+            if (filterActive) {
+                lastNode.connect(highpassFilter);
+                lastNode = highpassFilter;
+            }
+
+            lastNode.connect(speechEqNode);
+            speechEqNode.connect(clinicalCompressor);
+            clinicalCompressor.connect(gainNode);
+            gainNode.connect(analyserNode);
+            analyserNode.connect(audioCtx.destination);
+        }
+
+        function stopAudio() {
+            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+            if (audioCtx) audioCtx.close();
+            mainBtn.textContent = 'Activar Núcleo Auditivo';
+            mainBtn.classList.remove('btn-danger');
+            isRunning = false;
+        }
+
+        gainRange.addEventListener('input', (e) => {
+            gainVal.textContent = e.target.value + 'x';
+            if (gainNode) gainNode.gain.value = parseFloat(e.target.value);
+        });
+
+        compRange.addEventListener('input', (e) => {
+            compVal.textContent = e.target.value + ':1';
+            if (clinicalCompressor) clinicalCompressor.ratio.value = parseFloat(e.target.value);
+        });
+
+        eqRange.addEventListener('input', (e) => {
+            eqVal.textContent = '+' + e.target.value + ' dB';
+            if (speechEqNode) speechEqNode.gain.value = parseFloat(e.target.value);
+        });
+
+        filterToggle.addEventListener('click', () => {
+            filterActive = !filterActive;
+            filterToggle.style.backgroundColor = filterActive ? 'var(--success)' : '#374151';
+            filterToggle.textContent = filterActive ? 'Filtro Antirruido Activo' : 'Filtro Desactivado';
+            if (isRunning) reconnectGraph();
+        });
+
+        function visualize() {
+            if (!isRunning) return;
+            const bufferLength = analyserNode.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                if (!isRunning) return;
+                requestAnimationFrame(draw);
+                analyserNode.getByteFrequencyData(dataArray);
+
+                canvasCtx.fillStyle = '#010409';
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    let barHeight = dataArray[i] / 2.2;
+                    canvasCtx.fillStyle = `rgb(6, 182, 212)`;
+                    canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                    x += barWidth + 1;
+                }
+            }
+            draw();
+        }
+    </script>
+</body>
+</html>
