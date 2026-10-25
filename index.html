@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartAudio Hearing Assistant - Alta Nitidez</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --danger: #ef4444;
+            --success: #22c55e;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        header h1 {
+            font-size: 1.4rem;
+            margin: 0 0 4px 0;
+            color: var(--accent);
+        }
+
+        header p {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .card h2 {
+            font-size: 0.95rem;
+            margin: 0;
+            color: var(--text-main);
+            border-bottom: 1px solid #334155;
+            padding-bottom: 6px;
+        }
+
+        .btn {
+            background-color: var(--accent);
+            color: #0f172a;
+            border: none;
+            border-radius: 12px;
+            padding: 16px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s;
+            text-align: center;
+            width: 100%;
+        }
+
+        .btn:active { transform: scale(0.98); }
+        .btn-danger { background-color: var(--danger); color: white; }
+
+        select, input[type="range"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            background-color: #0f172a;
+            color: var(--text-main);
+            border: 1px solid #475569;
+            font-size: 0.95rem;
+            box-sizing: border-box;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 110px;
+            background-color: #090d16;
+            border-radius: 8px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--danger);
+        }
+
+        .dot.active {
+            background-color: var(--success);
+            box-shadow: 0 0 8px var(--success);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>SmartAudio Pro</h1>
+            <p>Filtro de Alta Nitidez y Supresión de Ruido</p>
+        </header>
+
+        <div class="card">
+            <div class="status-indicator">
+                <div id="statusDot" class="dot"></div>
+                <span id="statusText">Sistema Inactivo</span>
+            </div>
+
+            <div class="control-group">
+                <label for="micSelect">Seleccionar Micrófono:</label>
+                <select id="micSelect">
+                    <option value="">Cargando dispositivos...</option>
+                </select>
+            </div>
+
+            <button id="mainBtn" class="btn">Activar Amplificador HD</button>
+        </div>
+
+        <div class="card">
+            <h2>Espectrograma de Claridad de Voz</h2>
+            <canvas id="visualizer"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>Ajustes de Nitidez y Volumen</h2>
+            
+            <div class="control-group">
+                <label>Volumen Master: <span id="gainVal">1.5x</span></label>
+                <input type="range" id="gainRange" min="0.5" max="3.0" step="0.1" value="1.5">
+            </div>
+
+            <div class="control-group">
+                <label>Claridad de Consonantes (Voces agudas): <span id="eqVal">6 dB</span></label>
+                <input type="range" id="eqRange" min="0" max="15" step="1" value="6">
+            </div>
+
+            <div class="control-group">
+                <label>Filtro Antirruido Externo (Graves/Viento):</label>
+                <button id="filterToggle" class="btn" style="padding: 10px; font-size: 0.85rem; background-color: var(--success); color: #0f172a;">Activado (Filtro HD)</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let audioCtx = null;
+        let mediaStream = null;
+        let sourceNode = null;
+        let gainNode = null;
+        let highpassNode = null;
+        let peakingNode = null;
+        let compressorNode = null;
+        let analyserNode = null;
+        let isRunning = false;
+        let filterActive = true;
+
+        const mainBtn = document.getElementById('mainBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const micSelect = document.getElementById('micSelect');
+        const gainRange = document.getElementById('gainRange');
+        const gainVal = document.getElementById('gainVal');
+        const eqRange = document.getElementById('eqRange');
+        const eqVal = document.getElementById('eqVal');
+        const filterToggle = document.getElementById('filterToggle');
+        const canvas = document.getElementById('visualizer');
+        const canvasCtx = canvas.getContext('2d');
+
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+
+        async function updateDeviceList() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                
+                micSelect.innerHTML = '';
+                audioInputs.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Micrófono ${index + 1}`;
+                    micSelect.appendChild(option);
+                });
+            } catch (err) {
+                console.error("Error al listar dispositivos:", err);
+                micSelect.innerHTML = '<option value="">Permiso requerido</option>';
+            }
+        }
+
+        updateDeviceList();
+
+        mainBtn.addEventListener('click', async () => {
+            if (!isRunning) {
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                    if (audioCtx.state === 'suspended') {
+                        await audioCtx.resume();
+                    }
+
+                    const selectedMicId = micSelect.value;
+                    const constraints = {
+                        audio: {
+                            deviceId: selectedMicId ? { exact: selectedMicId } : undefined,
+                            echoCancellation: true,      // Evita eco y retorno de voz propia
+                            noiseSuppression: true,      // IA básica del navegador contra ruido ambiente
+                            autoGainControl: true        // Estabiliza el nivel de entrada de voz
+                        }
+                    };
+
+                    mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+                    
+                    // 1. Filtro Pasa-Altos (Corta ruidos de baja frecuencia < 300Hz)
+                    highpassNode = audioCtx.createBiquadFilter();
+                    highpassNode.type = 'highpass';
+                    highpassNode.frequency.value = 300; 
+
+                    // 2. Ecualizador Peaking (Realza la banda de claridad vocal: 2500Hz)
+                    peakingNode = audioCtx.createBiquadFilter();
+                    peakingNode.type = 'peaking';
+                    peakingNode.frequency.value = 2500; 
+                    peakingNode.Q.value = 1.2;
+                    peakingNode.gain.value = parseFloat(eqRange.value);
+
+                    // 3. Compresor Dinámico (Evita distorsión, realza nitidez y nivela la voz)
+                    compressorNode = audioCtx.createDynamicsCompressor();
+                    compressorNode.threshold.value = -24; // Umbral de compresión
+                    compressorNode.knee.value = 30;
+                    compressorNode.ratio.value = 12;      // Alta compresión para proteger la audición
+                    compressorNode.attack.value = 0.003;
+                    compressorNode.release.value = 0.250;
+
+                    // 4. Ganancia Master
+                    gainNode = audioCtx.createGain();
+                    gainNode.gain.value = parseFloat(gainRange.value);
+
+                    // 5. Analizador visual
+                    analyserNode = audioCtx.createAnalyser();
+                    analyserNode.fftSize = 256;
+
+                    reconnectAudioGraph();
+
+                    statusDot.classList.add('active');
+                    statusText.textContent = 'HD Activo (Transmitiendo)';
+                    mainBtn.textContent = 'Desactivar';
+                    mainBtn.classList.add('btn-danger');
+                    isRunning = true;
+
+                    visualize();
+
+                } catch (err) {
+                    alert('Error: Asegúrate de usar HTTPS. Detalle: ' + err.message);
+                }
+            } else {
+                stopAudio();
+            }
+        });
+
+        function reconnectAudioGraph() {
+            if (!sourceNode) return;
+            
+            sourceNode.disconnect();
+            if (highpassNode) highpassNode.disconnect();
+            if (peakingNode) peakingNode.disconnect();
+            if (compressorNode) compressorNode.disconnect();
+            if (gainNode) gainNode.disconnect();
+            if (analyserNode) analyserNode.disconnect();
+
+            let lastNode = sourceNode;
+
+            if (filterActive) {
+                lastNode.connect(highpassNode);
+                lastNode = divisorNode = highpassNode;
+            }
+
+            lastNode.connect(peakingNode);
+            peakingNode.connect(compressorNode);
+            compressorNode.connect(gainNode);
+            gainNode.connect(analyserNode);
+            analyserNode.connect(audioCtx.destination);
+        }
+
+        function stopAudio() {
+            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+            if (audioCtx) audioCtx.close();
+            statusDot.classList.remove('active');
+            statusText.textContent = 'Sistema Inactivo';
+            mainBtn.textContent = 'Activar Amplificador HD';
+            mainBtn.classList.remove('btn-danger');
+            isRunning = false;
+        }
+
+        gainRange.addEventListener('input', (e) => {
+            gainVal.textContent = e.target.value + 'x';
+            if (gainNode) gainNode.gain.value = parseFloat(e.target.value);
+        });
+
+        eqRange.addEventListener('input', (e) => {
+            eqVal.textContent = e.target.value + ' dB';
+            if (peakingNode) peakingNode.gain.value = parseFloat(e.target.value);
+        });
+
+        filterToggle.addEventListener('click', () => {
+            filterActive = !filterActive;
+            filterToggle.style.backgroundColor = filterActive ? 'var(--success)' : '#334155';
+            filterToggle.style.color = filterActive ? '#0f172a' : 'white';
+            filterToggle.textContent = filterActive ? 'Activado (Filtro HD)' : 'Desactivado';
+            if (isRunning) reconnectAudioGraph();
+        });
+
+        function visualize() {
+            if (!isRunning) return;
+            const bufferLength = analyserNode.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                if (!isRunning) return;
+                requestAnimationFrame(draw);
+                analyserNode.getByteFrequencyData(dataArray);
+
+                canvasCtx.fillStyle = '#090d16';
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    let barHeight = dataArray[i] / 2;
+                    canvasCtx.fillStyle = `rgb(${barHeight + 100}, 185, 248)`;
+                    canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                    x += barWidth + 1;
+                }
+            }
+            draw();
+        }
+    </script>
+</body>
+</html>
